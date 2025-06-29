@@ -19,7 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.api_route("/{path:path}", methods=["GET", "POST", "OPTIONS"])
+@app.api_route("/{path:path}", methods=["GET", "POST", "OPTIONS", "HEAD"])
 async def proxy_gateway(request: Request):
     target_url = request.headers.get('x-target-huggingface-url')
     if not target_url and request.method == "GET":
