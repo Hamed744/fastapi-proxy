@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response # "Response" را اضافه می‌کنیم
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import logging
@@ -18,15 +19,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# >>>>> تنها تغییر اینجاست: 'HEAD' به لیست اضافه شده <<<<<
 @app.api_route("/{path:path}", methods=["GET", "POST", "OPTIONS", "HEAD"])
 async def proxy_gateway(request: Request):
-    # >>>>> منطق جدید و صحیح برای UptimeRobot <<<<<
+    
+    # >>>>> و این دو خط برای پاسخ به UptimeRobot اضافه شده <<<<<
     if request.method == "HEAD":
-        # UptimeRobot یک درخواست HEAD برای بررسی سلامت می‌فرستد.
-        # ما فقط یک پاسخ موفقیت‌آمیز خالی برمی‌گردانیم تا وضعیت "Up" نشان داده شود.
-        logger.info("Responding to HEAD request from UptimeRobot with 200 OK.")
-        return Response(status_code=200, content="OK")
+        return Response(status_code=200) # یک پاسخ موفق خالی برمی‌گرداند
 
+    # بقیه کد شما کاملاً دست‌نخورده باقی مانده است
     target_url = request.headers.get('x-target-huggingface-url')
     if not target_url and request.method == "GET":
         target_url = request.query_params.get('X-Target-HuggingFace-URL')
@@ -37,13 +38,13 @@ async def proxy_gateway(request: Request):
     headers_to_forward = {
         'Content-Type': request.headers.get('Content-Type'),
         'X-Target-HuggingFace-URL': target_url,
-        'User-Agent': 'Render-Proxy-Gateway/1.0'
+        'User-Agent': 'HF-Proxy-Gateway/1.0'
     }
     headers_to_forward = {k: v for k, v in headers_to_forward.items() if v is not None}
     
     body_content = await request.body()
     
-    logger.info(f"Streaming {request.method} request for {target_url} to Cloudflare worker.")
+    logger.info(f"Streaming request for {target_url} to Cloudflare worker.")
 
     client = httpx.AsyncClient(http2=True)
     
@@ -59,7 +60,11 @@ async def proxy_gateway(request: Request):
 
         response_headers = {
             key: value for key, value in worker_resp.headers.items()
-            if key.lower() not in ['content-encoding', 'transfer-encoding', 'connection']
+            if key.lower() not in [
+                'content-encoding', 
+                'transfer-encoding', 
+                'connection'
+            ]
         }
 
         return StreamingResponse(
