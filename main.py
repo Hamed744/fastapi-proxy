@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Response # "Response" را اضافه می‌کنیم
+from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
@@ -19,15 +19,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# >>>>> تنها تغییر اینجاست: 'HEAD' به لیست اضافه شده <<<<<
-@app.api_route("/{path:path}", methods=["GET", "POST", "OPTIONS", "HEAD"])
+@app.api_route("/{path:path}", methods=["GET", "POST", "OPTIONS"])
 async def proxy_gateway(request: Request):
-    
-    # >>>>> و این دو خط برای پاسخ به UptimeRobot اضافه شده <<<<<
-    if request.method == "HEAD":
-        return Response(status_code=200) # یک پاسخ موفق خالی برمی‌گرداند
-
-    # بقیه کد شما کاملاً دست‌نخورده باقی مانده است
     target_url = request.headers.get('x-target-huggingface-url')
     if not target_url and request.method == "GET":
         target_url = request.query_params.get('X-Target-HuggingFace-URL')
@@ -49,6 +42,8 @@ async def proxy_gateway(request: Request):
     client = httpx.AsyncClient(http2=True)
     
     try:
+        # ** Streaming Magic Happens Here **
+        # We open a streaming request to the Cloudflare worker
         worker_req = client.build_request(
             method=request.method,
             url=CLOUDFLARE_WORKER_URL,
@@ -58,6 +53,7 @@ async def proxy_gateway(request: Request):
         )
         worker_resp = await client.send(worker_req, stream=True)
 
+        # Clean up response headers for the final client
         response_headers = {
             key: value for key, value in worker_resp.headers.items()
             if key.lower() not in [
@@ -67,6 +63,7 @@ async def proxy_gateway(request: Request):
             ]
         }
 
+        # Return a StreamingResponse that iterates over the worker response chunks
         return StreamingResponse(
             worker_resp.aiter_bytes(),
             status_code=worker_resp.status_code,
@@ -76,5 +73,6 @@ async def proxy_gateway(request: Request):
 
     except Exception as e:
         logger.error(f"An unexpected error occurred during streaming: {e}")
+        # Ensure the client is closed on error
         await client.aclose()
         return Response("Error: An internal error occurred in the proxy gateway.", status_code=500)
